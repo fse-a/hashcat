@@ -1,3 +1,5 @@
+.DS_Store
+*/.DS_Store
 *.exe
 *.bin
 *.app
@@ -27,8 +29,13 @@ obj/*.a
 include/CL
 tools/luks_tests
 .vscode
+test_edge*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Generated docs are overwritten anyway
+/docs/hashcat-example_hashes.md
+/docs/hashcat-help.md

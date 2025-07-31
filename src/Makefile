@@ -37,6 +37,8 @@ endif
 
 ifeq ($(DEBUG),1)
 $(info "## Detected Operating System : $(UNAME)")
+$(info "## Detected CC : $(CC)")
+$(info "## Detected CXX : $(CXX)")
 endif
 
 BUILD_MODE := native
@@ -83,8 +85,11 @@ AR                      := /usr/bin/ar
 SED                     := /usr/bin/sed
 SED_IN_PLACE            := -i ""
 DARWIN_VERSION          := $(shell uname -r | cut -d. -f1)
-IS_APPLE_SILICON        := $(shell lipo /bin/zsh -verify_arch arm64e && echo 1 || echo 0)
+IS_APPLE_SILICON        := $(shell [ "$$(sysctl -in hw.optional.arm64 2>/dev/null)" = "1" ] && echo 1 || echo 0)
 endif
+
+IS_AARCH64              := $(shell [ "$$(arch 2>/dev/null)" = "aarch64" ] && echo 1 || echo 0)
+IS_ARM                  := $(or $(filter 1,$(IS_APPLE_SILICON)),$(filter 1,$(IS_AARCH64)))
 
 ifneq (,$(filter $(UNAME),FreeBSD NetBSD))
 CC                      := cc
@@ -197,15 +202,17 @@ CFLAGS                  += -Wextra
 endif
 
 ## because LZMA SDK
-ifeq ($(CC),clang)
-#No longer supported in clang 10.0.0
-#CFLAGS                  += -Wno-enum-conversion
+ifneq (,$(findstring clang, $(CC)))
 CFLAGS                  += -Wno-typedef-redefinition
+else
+ifeq ($(CC),cc)
+CFLAGS                  += -Wno-typedef-redefinition
+endif
 endif
 
 ifeq ($(USE_SYSTEM_LZMA),0)
 CFLAGS_LZMA             += -D_7ZIP_ST
-ifneq ($(CC),clang)
+ifeq (,$(findstring clang, $(CC)))
 CFLAGS_LZMA             += -Wno-misleading-indentation
 endif
 endif
@@ -217,6 +224,9 @@ CFLAGS_ZLIB             += -Wno-implicit-function-declaration
 CFLAGS_ZLIB             += -Wno-unused-parameter
 CFLAGS_ZLIB             += -DIOAPI_NO_64
 CFLAGS_ZLIB             += -DUNZ_BUFSIZE=262144
+ifneq (,$(findstring clang, $(CC)))
+CFLAGS_ZLIB             += -Wno-deprecated-non-prototype -Wno-unknown-warning-option
+endif
 endif
 
 ## because UNRAR
@@ -229,6 +239,10 @@ ifneq ($(CC),clang)
 CFLAGS_UNRAR            += -Wno-class-memaccess
 CFLAGS_UNRAR            += -Wno-misleading-indentation
 CFLAGS_UNRAR            += -Wno-format-overflow
+else
+ifeq ($(IS_APPLE_SILICON),0)
+CFLAGS_UNRAR            += -Wno-nontrivial-memcall
+endif
 endif
 CFLAGS_UNRAR            += -Wno-missing-braces
 CFLAGS_UNRAR            += -Wno-unused-variable
@@ -351,7 +365,7 @@ LFLAGS_NATIVE           += -lpthread
 endif # NetBSD
 
 ifeq ($(UNAME),Darwin)
-export MACOSX_DEPLOYMENT_TARGET=10.15
+export MACOSX_DEPLOYMENT_TARGET=15.0
 CFLAGS_NATIVE           := $(CFLAGS)
 CFLAGS_NATIVE           += -DWITH_HWMON
 
@@ -365,12 +379,11 @@ LFLAGS_NATIVE           += -framework CoreGraphics
 LFLAGS_NATIVE           += -framework Foundation
 LFLAGS_NATIVE           += -framework IOKit
 LFLAGS_NATIVE           += -framework Metal
+LFLAGS_NATIVE           += -lIOReport
 LFLAGS_NATIVE           += -lpthread
 LFLAGS_NATIVE           += -liconv
 
 ifeq ($(IS_APPLE_SILICON),1)
-CFLAGS_NATIVE           += -DSSE2NEON_SUPPRESS_WARNINGS
-CFLAGS_NATIVE           += -I$(DEPS_SSE2NEON)
 CFLAGS_NATIVE           += -arch arm64
 CFLAGS_NATIVE           += -arch x86_64
 ifeq ($(SHARED),1)
@@ -380,6 +393,11 @@ endif
 endif
 
 endif # Darwin
+
+ifeq ($(IS_ARM),1)
+CFLAGS_NATIVE           += -DSSE2NEON_SUPPRESS_WARNINGS
+CFLAGS_NATIVE           += -I$(DEPS_SSE2NEON)
+endif
 
 ifeq ($(UNAME),CYGWIN)
 CFLAGS_NATIVE           := $(CFLAGS)
@@ -414,12 +432,12 @@ CXXFLAGS                :=
 ##
 
 EMU_OBJS_ALL            := emu_general emu_inc_common emu_inc_platform emu_inc_scalar emu_inc_simd
-EMU_OBJS_ALL            += emu_inc_rp emu_inc_rp_optimized
+EMU_OBJS_ALL            += emu_inc_rp_common emu_inc_rp emu_inc_rp_optimized
 EMU_OBJS_ALL            += emu_inc_hash_md4 emu_inc_hash_md5 emu_inc_hash_ripemd160 emu_inc_hash_sha1 emu_inc_hash_sha256 emu_inc_hash_sha384 emu_inc_hash_sha512 emu_inc_hash_streebog256 emu_inc_hash_streebog512 emu_inc_ecc_secp256k1 emu_inc_bignum_operations
 EMU_OBJS_ALL            += emu_inc_cipher_aes emu_inc_cipher_camellia emu_inc_cipher_des emu_inc_cipher_kuznyechik emu_inc_cipher_serpent emu_inc_cipher_twofish
 EMU_OBJS_ALL            += emu_inc_hash_base58
 
-OBJS_ALL                := affinity autotune backend benchmark bitmap bitops bridges combinator common convert cpt cpu_crc32 debugfile dictstat dispatch dynloader event ext_ADL ext_cuda ext_hip ext_nvapi ext_nvml ext_nvrtc ext_hiprtc ext_OpenCL ext_sysfs_amdgpu ext_sysfs_cpu ext_iokit ext_lzma filehandling folder hashcat hashes hlfmt hwmon induct interface keyboard_layout locking logfile loopback memory monitor mpsp outfile_check outfile pidfile potfile restore rp rp_cpu selftest slow_candidates shared status stdout straight terminal thread timer tuningdb usage user_options wordlist $(EMU_OBJS_ALL)
+OBJS_ALL                := affinity autotune backend benchmark bitmap bitops bridges combinator common convert cpt cpu_crc32 debugfile dictstat dispatch dynloader event ext_ADL ext_cuda ext_hip ext_nvapi ext_nvml ext_nvrtc ext_hiprtc ext_OpenCL ext_sysfs_amdgpu ext_sysfs_intelgpu ext_sysfs_cpu ext_lzma filehandling folder hashcat hashes hlfmt hwmon induct interface keyboard_layout locking logfile loopback memory monitor mpsp outfile_check outfile pidfile potfile restore rp rp_cpu selftest slow_candidates shared status stdout straight terminal thread timer tuningdb usage user_options wordlist $(EMU_OBJS_ALL)
 
 ifeq ($(ENABLE_BRAIN),1)
 OBJS_ALL                += brain
@@ -430,7 +448,7 @@ LINUX_OBJS              := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).LINUX.o)
 WIN_OBJS                := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).WIN.o)
 
 ifeq ($(UNAME),Darwin)
-OBJS_METAL              := ext_metal
+OBJS_METAL              := ext_metal ext_iokit
 
 NATIVE_OBJS             += $(foreach OBJ,$(OBJS_METAL),obj/$(OBJ).METAL.NATIVE.o)
 endif
@@ -470,6 +488,13 @@ LINUX_OBJS              += $(foreach OBJ,$(OBJS_UNRAR),obj/$(OBJ).UNRAR.LINUX.o)
 WIN_OBJS                += $(foreach OBJ,$(OBJS_UNRAR),obj/$(OBJ).UNRAR.WIN.o)
 endif
 endif
+
+##
+## Tools
+##
+
+TOOLS                   += $(wildcard tools/*hashcat.pl)
+TOOLS                   += $(wildcard tools/*hashcat.py)
 
 ##
 ## Targets: Native Compilation
@@ -531,9 +556,9 @@ endif
 
 .PHONY: install
 ifeq ($(SHARED),1)
-install: install_docs install_shared install_library install_library_dev install_tunings install_kernels install_modules install_bridges install_hashcat
+install: install_docs install_shared install_tools install_library install_library_dev install_tunings install_kernels install_modules install_bridges install_hashcat
 else
-install: install_docs install_shared                                     install_tunings install_kernels install_modules install_bridges install_hashcat
+install: install_docs install_shared install_tools                                     install_tunings install_kernels install_modules install_bridges install_hashcat
 endif
 
 # we need this extra target to make sure that for parallel builds (i.e. 2+ Makefile targets could possible run at the same time)
@@ -557,7 +582,6 @@ install_docs: install_make_shared_root
 	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/rules
 	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/extra
 	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/extra/tab_completion
-	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/tools
 	$(INSTALL) -m 644 example.dict                                          $(DESTDIR)$(DOCUMENT_FOLDER)/
 	$(INSTALL) -m 644 example0.hash                                         $(DESTDIR)$(DOCUMENT_FOLDER)/
 	$(INSTALL) -m 644 example400.hash                                       $(DESTDIR)$(DOCUMENT_FOLDER)/
@@ -578,7 +602,6 @@ install_docs: install_make_shared_root
 	$(FIND) masks/    -type f -exec $(INSTALL) -m 644 {}                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
 	$(FIND) rules/    -type d -exec $(INSTALL) -m 755 -d                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
 	$(FIND) rules/    -type f -exec $(INSTALL) -m 644 {}                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
-	$(FIND) tools/    -type f -name '*cat.p[ly]' -exec $(INSTALL) -m 755 {} $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
 	$(SED) $(SED_IN_PLACE) 's/\.\/hashcat/hashcat/'                         $(DESTDIR)$(DOCUMENT_FOLDER)/example0.sh
 	$(SED) $(SED_IN_PLACE) 's/\.\/hashcat/hashcat/'                         $(DESTDIR)$(DOCUMENT_FOLDER)/example400.sh
 	$(SED) $(SED_IN_PLACE) 's/\.\/hashcat/hashcat/'                         $(DESTDIR)$(DOCUMENT_FOLDER)/example500.sh
@@ -628,9 +651,15 @@ install_hashcat: $(HASHCAT_FRONTEND)
 	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(INSTALL_FOLDER)
 	$(INSTALL) -m 755 $(HASHCAT_FRONTEND)                                   $(DESTDIR)$(INSTALL_FOLDER)/
 
+.PHONY: install_tools
+install_tools:
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(INSTALL_FOLDER)
+	$(INSTALL) -m 755 ${TOOLS}                                              $(DESTDIR)$(INSTALL_FOLDER)/
+
 .PHONY: uninstall
 uninstall:
 	$(RM) -f  $(DESTDIR)$(INSTALL_FOLDER)/$(HASHCAT_FRONTEND)
+	$(RM) -f  $(addprefix $(DESTDIR)$(INSTALL_FOLDER)/,$(notdir ${TOOLS}))
 	$(RM) -f  $(DESTDIR)$(LIBRARY_FOLDER)/$(HASHCAT_LIBRARY)
 	$(RM) -rf $(DESTDIR)$(LIBRARY_DEV_FOLDER)
 	$(RM) -rf $(DESTDIR)$(SHARED_FOLDER)
@@ -802,7 +831,6 @@ CFLAGS_CROSS_WIN        := $(CFLAGS)
 CFLAGS_CROSS_WIN        += -fPIC
 CFLAGS_CROSS_WIN        += -I$(WIN_ICONV)/include/
 CFLAGS_CROSS_WIN        += -DWITH_HWMON
-CFLAGS_CROSS_WIN        += -D__USE_MINGW_ANSI_STDIO=0
 
 LFLAGS_CROSS_LINUX      := $(LFLAGS)
 LFLAGS_CROSS_LINUX      += -lpthread
@@ -827,11 +855,11 @@ CFLAGS_LZMA_WIN         += -Wno-misleading-indentation
 
 CFLAGS_UNRAR_WIN        += -Wno-misleading-indentation
 CFLAGS_UNRAR_WIN        += -Wno-class-memaccess
+endif
 
-ifeq ($(IS_APPLE_SILICON),1)
+ifeq ($(IS_ARM),1)
 CFLAGS_CROSS_LINUX      += -DSSE2NEON_SUPPRESS_WARNINGS
 CFLAGS_CROSS_LINUX      += -I$(DEPS_SSE2NEON)
-endif
 endif
 
 ##

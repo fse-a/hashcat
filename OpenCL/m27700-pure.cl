@@ -13,17 +13,7 @@
 #include M2S(INCLUDE_PATH/inc_cipher_aes.cl)
 #endif
 
-typedef struct
-{
-  #ifndef SCRYPT_TMP_ELEM
-  #define SCRYPT_TMP_ELEM 1
-  #endif
-
-  uint4 P[SCRYPT_TMP_ELEM];
-
-} scrypt_tmp_t;
-
-KERNEL_FQ void HC_ATTR_SEQ m27700_init (KERN_ATTR_TMPS (scrypt_tmp_t))
+KERNEL_FQ KERNEL_FA void m27700_init (KERN_ATTR_TMPS (scrypt_tmp_t))
 {
   const u64 gid = get_global_id (0);
 
@@ -46,88 +36,50 @@ KERNEL_FQ void HC_ATTR_SEQ m27700_init (KERN_ATTR_TMPS (scrypt_tmp_t))
          | ((w[j] << 8) & 0xff00ff00);
   }
 
-  sha256_hmac_ctx_t sha256_hmac_ctx;
+  u32 s[16] = { 0 };
 
-  sha256_hmac_init_swap (&sha256_hmac_ctx, w, w_len);
+  s[0] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[0]);
+  s[1] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[1]);
 
-  u32 x0[4] = { 0 };
-  u32 x1[4] = { 0 };
-  u32 x2[4] = { 0 };
-  u32 x3[4] = { 0 };
+  scrypt_pbkdf2_ppg (w, w_len, s, 8, tmps[gid].in, SCRYPT_SZ);
 
-  x0[0] = salt_bufs[SALT_POS_HOST].salt_buf[0];
-  x0[1] = salt_bufs[SALT_POS_HOST].salt_buf[1];
-
-  sha256_hmac_update_64 (&sha256_hmac_ctx, x0, x1, x2, x3, 8);
-
-  scrypt_pbkdf2_body (&sha256_hmac_ctx, tmps[gid].P, SCRYPT_CNT * 4);
-
-  scrypt_blockmix_in (tmps[gid].P, SCRYPT_CNT * 4);
+  scrypt_blockmix_in (tmps[gid].in, tmps[gid].out, SCRYPT_SZ);
 }
 
-KERNEL_FQ void HC_ATTR_SEQ m27700_loop_prepare (KERN_ATTR_TMPS (scrypt_tmp_t))
+KERNEL_FQ KERNEL_FA void m27700_loop_prepare (KERN_ATTR_TMPS (scrypt_tmp_t))
 {
   const u64 gid = get_global_id (0);
   const u64 lid = get_local_id (0);
+  const u64 lsz = get_local_size (0);
+  const u64 bid = get_group_id (0);
 
   if (gid >= GID_CNT) return;
 
-  GLOBAL_AS uint4 *d_scrypt0_buf = (GLOBAL_AS uint4 *) d_extra0_buf;
-  GLOBAL_AS uint4 *d_scrypt1_buf = (GLOBAL_AS uint4 *) d_extra1_buf;
-  GLOBAL_AS uint4 *d_scrypt2_buf = (GLOBAL_AS uint4 *) d_extra2_buf;
-  GLOBAL_AS uint4 *d_scrypt3_buf = (GLOBAL_AS uint4 *) d_extra3_buf;
+  u32 X[STATE_CNT4];
 
-  #ifdef IS_HIP
-  LOCAL_VK uint4 X_s[MAX_THREADS_PER_BLOCK][STATE_CNT4];
-  LOCAL_AS uint4 *X = X_s[lid];
-  #else
-  uint4 X[STATE_CNT4];
-  #endif
+  GLOBAL_AS u32 *P = tmps[gid].out + (SALT_REPEAT * STATE_CNT4);
 
-  const u32 P_offset = SALT_REPEAT * STATE_CNT4;
-
-  GLOBAL_AS uint4 *P = tmps[gid].P + P_offset;
-
-  for (int z = 0; z < STATE_CNT4; z++) X[z] = P[z];
-
-  scrypt_smix_init (X, d_scrypt0_buf, d_scrypt1_buf, d_scrypt2_buf, d_scrypt3_buf, gid);
-
-  for (int z = 0; z < STATE_CNT4; z++) P[z] = X[z];
+  scrypt_smix_init (P, X, d_extra0_buf, d_extra1_buf, d_extra2_buf, d_extra3_buf, gid, lid, lsz, bid);
 }
 
-KERNEL_FQ void HC_ATTR_SEQ m27700_loop (KERN_ATTR_TMPS (scrypt_tmp_t))
+KERNEL_FQ KERNEL_FA void m27700_loop (KERN_ATTR_TMPS (scrypt_tmp_t))
 {
   const u64 gid = get_global_id (0);
   const u64 lid = get_local_id (0);
+  const u64 lsz = get_local_size (0);
+  const u64 bid = get_group_id (0);
 
   if (gid >= GID_CNT) return;
 
-  GLOBAL_AS uint4 *d_scrypt0_buf = (GLOBAL_AS uint4 *) d_extra0_buf;
-  GLOBAL_AS uint4 *d_scrypt1_buf = (GLOBAL_AS uint4 *) d_extra1_buf;
-  GLOBAL_AS uint4 *d_scrypt2_buf = (GLOBAL_AS uint4 *) d_extra2_buf;
-  GLOBAL_AS uint4 *d_scrypt3_buf = (GLOBAL_AS uint4 *) d_extra3_buf;
+  u32 X[STATE_CNT4];
+  u32 T[STATE_CNT4];
 
-  uint4 X[STATE_CNT4];
+  GLOBAL_AS u32 *P = tmps[gid].out + (SALT_REPEAT * STATE_CNT4);
 
-  #ifdef IS_HIP
-  LOCAL_VK uint4 T_s[MAX_THREADS_PER_BLOCK][STATE_CNT4];
-  LOCAL_AS uint4 *T = T_s[lid];
-  #else
-  uint4 T[STATE_CNT4];
-  #endif
-
-  const u32 P_offset = SALT_REPEAT * STATE_CNT4;
-
-  GLOBAL_AS uint4 *P = tmps[gid].P + P_offset;
-
-  for (int z = 0; z < STATE_CNT4; z++) X[z] = P[z];
-
-  scrypt_smix_loop (X, T, d_scrypt0_buf, d_scrypt1_buf, d_scrypt2_buf, d_scrypt3_buf, gid);
-
-  for (int z = 0; z < STATE_CNT4; z++) P[z] = X[z];
+  scrypt_smix_loop (P, X, T, d_extra0_buf, d_extra1_buf, d_extra2_buf, d_extra3_buf, gid, lid, lsz, bid);
 }
 
-KERNEL_FQ void HC_ATTR_SEQ m27700_comp (KERN_ATTR_TMPS (scrypt_tmp_t))
+KERNEL_FQ KERNEL_FA void m27700_comp (KERN_ATTR_TMPS (scrypt_tmp_t))
 {
   const u64 gid = get_global_id (0);
   const u64 lid = get_local_id (0);
@@ -207,28 +159,24 @@ KERNEL_FQ void HC_ATTR_SEQ m27700_comp (KERN_ATTR_TMPS (scrypt_tmp_t))
          | ((w[j] << 8) & 0xff00ff00);
   }
 
-  scrypt_blockmix_out (tmps[gid].P, SCRYPT_CNT * 4);
+  scrypt_blockmix_out (tmps[gid].out, tmps[gid].in, SCRYPT_SZ);
 
-  sha256_hmac_ctx_t ctx;
+  u32 out[8];
 
-  sha256_hmac_init_swap (&ctx, w, w_len);
-
-  sha256_hmac_update_global_swap (&ctx, (GLOBAL_AS const u32 *) tmps[gid].P, SCRYPT_CNT * 4);
-
-  scrypt_pbkdf2_body (&ctx, tmps[gid].P, 16);
+  scrypt_pbkdf2_pgp (w, w_len, tmps[gid].in, SCRYPT_SZ, out, 32);
 
   // AES256-CBC decrypt
 
   u32 key[8];
 
-  key[0] = tmps[gid].P[0].x;
-  key[1] = tmps[gid].P[0].y;
-  key[2] = tmps[gid].P[0].z;
-  key[3] = tmps[gid].P[0].w;
-  key[4] = tmps[gid].P[1].x;
-  key[5] = tmps[gid].P[1].y;
-  key[6] = tmps[gid].P[1].z;
-  key[7] = tmps[gid].P[1].w;
+  key[0] = out[0];
+  key[1] = out[1];
+  key[2] = out[2];
+  key[3] = out[3];
+  key[4] = out[4];
+  key[5] = out[5];
+  key[6] = out[6];
+  key[7] = out[7];
 
   #define KEYLEN 60
 

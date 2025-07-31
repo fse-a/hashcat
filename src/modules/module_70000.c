@@ -29,7 +29,7 @@ static const u64   BRIDGE_TYPE    = BRIDGE_TYPE_MATCH_TUNINGS // optional - impr
                                   | BRIDGE_TYPE_REPLACE_LOOP;
 static const char *BRIDGE_NAME    = "argon2id_reference";
 static const char *ST_PASS        = "hashcat";
-static const char *ST_HASH        = "$argon2id$v=19$m=4096,t=3,p=1$FoIjFnZlM2JSJWYXUgMFAw$eYKMzhbW8uyT1LLtKRdRcJj2CQeRrdr2pKv/Y71YbAQ";
+static const char *ST_HASH        = "$argon2id$v=19$m=65536,t=3,p=1$FBMjI4RJBhIykCgol1KEJA$2ky5GAdhT1kH4kIgPN/oERE3Taiy43vNN70a3HpiKQU";
 
 u32         module_attack_exec    (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return ATTACK_EXEC;     }
 u32         module_dgst_pos0      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return DGST_POS0;       }
@@ -76,6 +76,20 @@ typedef struct
 } argon2_t;
 
 static const char *SIGNATURE_ARGON2ID= "$argon2id$";
+
+u32 module_kernel_threads_min (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+{
+  const u32 kernel_threads_min = 1;
+
+  return kernel_threads_min;
+}
+
+u32 module_kernel_threads_max (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+{
+  const u32 kernel_threads_max = 1;
+
+  return kernel_threads_max;
+}
 
 u64 module_esalt_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
 {
@@ -300,8 +314,8 @@ void module_init (module_ctx_t *module_ctx)
   module_ctx->module_kernel_accel_min         = MODULE_DEFAULT;
   module_ctx->module_kernel_loops_max         = MODULE_DEFAULT;
   module_ctx->module_kernel_loops_min         = MODULE_DEFAULT;
-  module_ctx->module_kernel_threads_max       = MODULE_DEFAULT;
-  module_ctx->module_kernel_threads_min       = MODULE_DEFAULT;
+  module_ctx->module_kernel_threads_max       = module_kernel_threads_max;
+  module_ctx->module_kernel_threads_min       = module_kernel_threads_min;
   module_ctx->module_kern_type                = module_kern_type;
   module_ctx->module_kern_type_dynamic        = MODULE_DEFAULT;
   module_ctx->module_opti_type                = module_opti_type;

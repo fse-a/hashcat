@@ -66,6 +66,12 @@ using namespace metal;
 #define KERNEL_FQ   __kernel
 #endif
 
+#if defined FIXED_LOCAL_SIZE
+#define KERNEL_FA FIXED_THREAD_COUNT(FIXED_LOCAL_SIZE)
+#else
+#define KERNEL_FA
+#endif
+
 #ifndef MAYBE_UNUSED
 #define MAYBE_UNUSED
 #endif
@@ -115,10 +121,6 @@ using namespace metal;
 #define IS_GENERIC
 #endif
 
-#if defined IS_AMD && HAS_VPERM == 1
-#define IS_ROCM
-#endif
-
 #define LOCAL_MEM_TYPE_LOCAL  1
 #define LOCAL_MEM_TYPE_GLOBAL 2
 
@@ -148,23 +150,10 @@ using namespace metal;
 #define HC_INLINE inline static
 #endif
 
-#if defined FIXED_LOCAL_SIZE
-#define HC_ATTR_SEQ FIXED_THREAD_COUNT((FIXED_LOCAL_SIZE))
-#else
-#if defined IS_AMD && defined IS_GPU
-#define HC_ATTR_SEQ
-#define DECLSPEC HC_INLINE
-#elif defined IS_HIP
-#define HC_ATTR_SEQ __launch_bounds__((MAX_THREADS_PER_BLOCK), 0)
-#define DECLSPEC __device__ HC_INLINE
-#else
-#define HC_ATTR_SEQ
-#define DECLSPEC
-#endif
-#endif
-
 #if defined IS_AMD && defined IS_GPU
 #define DECLSPEC HC_INLINE
+#elif defined IS_CUDA
+#define DECLSPEC __device__
 #elif defined IS_HIP
 #define DECLSPEC __device__ HC_INLINE
 #else
@@ -197,32 +186,34 @@ using namespace metal;
 #define USE_ROTATE
 #endif
 
-#ifdef IS_ROCM
+#ifdef IS_OPENCL
 #define USE_BITSELECT
 #define USE_ROTATE
-#endif
-
-#ifdef IS_INTEL_SDK
-#ifdef IS_CPU
-//#define USE_BITSELECT
-//#define USE_ROTATE
-#endif
-#endif
-
-#ifdef IS_OPENCL
-//#define USE_BITSELECT
-//#define USE_ROTATE
-//#define USE_SWIZZLE
+#define USE_SWIZZLE
 #endif
 
 #ifdef IS_METAL
 #define USE_ROTATE
+#ifndef IS_APPLE_SILICON
+#define USE_BITSELECT
+#define USE_SWIZZLE
+#endif
 
 // Metal support max VECT_SIZE = 4
 #define s0 x
 #define s1 y
 #define s2 z
 #define s3 w
+#endif
+
+#if HAS_SHFW == 1
+#define USE_FUNNELSHIFT
+#endif
+
+// some algorithms do not like this, eg 150, 1100, ...
+
+#ifdef NO_FUNNELSHIFT
+#undef USE_FUNNELSHIFT
 #endif
 
 #endif // INC_VENDOR_H

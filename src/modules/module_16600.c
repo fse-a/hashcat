@@ -47,9 +47,9 @@ const char *module_st_pass        (MAYBE_UNUSED const hashconfig_t *hashconfig, 
 
 typedef struct electrum_wallet
 {
-  u32 salt_type;
   u32 iv[4];
   u32 encrypted[4];
+  u32 salt_type;
 
 } electrum_wallet_t;
 

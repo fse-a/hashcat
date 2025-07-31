@@ -6,39 +6,56 @@
 #ifndef INC_HASH_SCRYPT_H
 #define INC_HASH_SCRYPT_H
 
-#define GET_SCRYPT_CNT(r,p) (2 * (r) * 16 * (p))
-#define GET_SMIX_CNT(r,N)   (2 * (r) * 16 * (N))
-#define GET_STATE_CNT(r)    (2 * (r) * 16)
+#define GET_SCRYPT_SZ(r,p) (128 * (r) * (p))
+#define GET_STATE_SZ(r)    (128 * (r))
 
-#define SCRYPT_CNT  GET_SCRYPT_CNT (SCRYPT_R, SCRYPT_P)
-#define SCRYPT_CNT4 (SCRYPT_CNT / 4)
-#define STATE_CNT   GET_STATE_CNT  (SCRYPT_R)
-#define STATE_CNT4  (STATE_CNT / 4)
+// _SZ is true sizes as bytes
+#define SCRYPT_SZ  GET_SCRYPT_SZ (SCRYPT_R, SCRYPT_P)
+#define STATE_SZ   GET_STATE_SZ  (SCRYPT_R)
 
-#define VIDX(bid4,lsz,lid,ySIZE,zSIZE,y,z) (((bid4) * (lsz) * (ySIZE) * (zSIZE)) + ((lid) * (ySIZE) * (zSIZE)) + ((y) * (zSIZE)) + (z))
+// _CNT is size as whatever /X datatype
+#define SCRYPT_CNT4  (SCRYPT_SZ / 4)
+#define STATE_CNT4   (STATE_SZ  / 4)
 
-#if defined IS_CUDA
-inline __device__ uint4 operator &  (const uint4  a, const u32   b) { return make_uint4 ((a.x &  b  ), (a.y &  b  ), (a.z &  b  ), (a.w &  b  ));  }
-inline __device__ uint4 operator << (const uint4  a, const u32   b) { return make_uint4 ((a.x << b  ), (a.y << b  ), (a.z << b  ), (a.w << b  ));  }
-inline __device__ uint4 operator >> (const uint4  a, const u32   b) { return make_uint4 ((a.x >> b  ), (a.y >> b  ), (a.z >> b  ), (a.w >> b  ));  }
-inline __device__ uint4 operator +  (const uint4  a, const uint4 b) { return make_uint4 ((a.x +  b.x), (a.y +  b.y), (a.z +  b.z), (a.w +  b.w));  }
-inline __device__ uint4 operator ^  (const uint4  a, const uint4 b) { return make_uint4 ((a.x ^  b.x), (a.y ^  b.y), (a.z ^  b.z), (a.w ^  b.w));  }
-inline __device__ uint4 operator |  (const uint4  a, const uint4 b) { return make_uint4 ((a.x |  b.x), (a.y |  b.y), (a.z |  b.z), (a.w |  b.w));  }
-inline __device__ void  operator ^= (      uint4 &a, const uint4 b) {                     a.x ^= b.x;   a.y ^= b.y;   a.z ^= b.z;   a.w ^= b.w;    }
-#endif
+// this would be uint4, feels more natural than 16
+#define SCRYPT_CNT44 ((SCRYPT_SZ / 4) / 4)
+#define STATE_CNT44  ((STATE_SZ  / 4) / 4)
 
-#if defined IS_CUDA || defined IS_HIP
-inline __device__ uint4 rotate (const uint4 a, const int n)
+#define SALSA_SZ   64
+#define SALSA_CNT4 (SALSA_SZ / 4)
+#define SALSA_CNT44 ((SALSA_SZ / 4) / 4)
+
+// should be safe, because in backend.c we use:
+//    u64 size_extra_buffer1 = 4096;
+//  size_extra_buffer1 += base_chunk_size;
+// could be useless, pointers seem to be page aligned
+//#define ALIGN_PTR_1k(p) ((GLOBAL_AS hc_uint4_t *) (((u64) (p) + 1023) & ~1023UL))
+
+#if defined IS_INTEL_SDK
+
+typedef struct
 {
-  uint4 r;
+  u32 x, y, z, w;
 
-  r.x = hc_rotl32_S (r.x, n);
-  r.y = hc_rotl32_S (r.y, n);
-  r.z = hc_rotl32_S (r.z, n);
-  r.w = hc_rotl32_S (r.w, n);
+} hc_uint4_t;
 
-  return r;
-}
+#else
+
+typedef uint4 hc_uint4_t;
+
 #endif
+
+DECLSPEC hc_uint4_t xor_uint4 (const hc_uint4_t a, const hc_uint4_t b);
+
+typedef struct
+{
+  #ifndef SCRYPT_TMP_ELEM
+  #define SCRYPT_TMP_ELEM 1
+  #endif
+
+  u32 in[SCRYPT_TMP_ELEM / 2];
+  u32 out[SCRYPT_TMP_ELEM / 2];
+
+} scrypt_tmp_t;
 
 #endif

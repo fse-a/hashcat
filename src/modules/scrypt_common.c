@@ -1,4 +1,9 @@
 
+/**
+ * Author......: See docs/credits.txt
+ * License.....: MIT
+ */
+
 #include <inttypes.h>
 #include "common.h"
 #include "types.h"
@@ -54,10 +59,10 @@ const char *scrypt_module_extra_tuningdb_block (MAYBE_UNUSED const hashconfig_t 
 
   const u32 scrypt_N = (hashes->salts_buf[0].scrypt_N == 0) ? hashes->st_salts_buf[0].scrypt_N : hashes->salts_buf[0].scrypt_N;
   const u32 scrypt_r = (hashes->salts_buf[0].scrypt_r == 0) ? hashes->st_salts_buf[0].scrypt_r : hashes->salts_buf[0].scrypt_r;
-  const u32 scrypt_p = (hashes->salts_buf[0].scrypt_p == 0) ? hashes->st_salts_buf[0].scrypt_p : hashes->salts_buf[0].scrypt_p;
+  //const u32 scrypt_p = (hashes->salts_buf[0].scrypt_p == 0) ? hashes->st_salts_buf[0].scrypt_p : hashes->salts_buf[0].scrypt_p;
 
   const u64 size_per_accel = (128ULL * scrypt_r * scrypt_N * scrypt_exptected_threads (hashconfig, user_options, user_options_extra, device_param));
-  const u64 state_per_accel = (128ULL * scrypt_r * scrypt_p * scrypt_exptected_threads (hashconfig, user_options, user_options_extra, device_param));
+  //const u64 state_per_accel = (128ULL * scrypt_r * scrypt_p * scrypt_exptected_threads (hashconfig, user_options, user_options_extra, device_param));
 
   int   lines_sz  = 4096;
   char *lines_buf = hcmalloc (lines_sz);
@@ -65,11 +70,24 @@ const char *scrypt_module_extra_tuningdb_block (MAYBE_UNUSED const hashconfig_t 
 
   const u32 device_processors = device_param->device_processors;
 
-  const u32 device_local_mem_size = device_param->device_local_mem_size;
+  const u32 device_maxworkgroup_size = device_param->device_maxworkgroup_size;
 
-  const u64 fixed_mem = (512 * 1024 * 1024); // some storage we need for pws[], tmps[], and others
+  //const u32 device_local_mem_size = device_param->device_local_mem_size;
 
-  const u64 available_mem = MIN (device_param->device_available_mem, (device_param->device_maxmem_alloc * 4)) - fixed_mem;
+  const u64 fixed_mem = (128 * 1024 * 1024); // some storage we need for pws[], tmps[], and others. Is around 72MiB in reality.
+
+  // SCRYPT kernels cause significant spilling, which increases global memory requirements.
+  // The variables the runtime uses to allocate global memory for this spilling are undocumented.
+  // As a result, launching the kernel can run into memory allocation errors, especially on devices with a large SM count and a high SCRYPT-R value.
+  // Based on testing, we assume the following behavior:
+  // The runtime uses device_maxworkgroup_size as the thread count, multiplies it by the SM count, and then multiplies that by the spill size.
+  // Additionally, it completely ignores our specified grid sizes, which could otherwise help mitigate this.
+  // We assume other runtimes behave similarly.
+  // Note: we need to allocate the 128R buffer three times: main context, TMTO temporary buffer, (half-size) BlockMix.
+
+  const u64 spill_mem = 3 * ((128ULL * scrypt_r) * device_processors * device_maxworkgroup_size);
+
+  const u64 available_mem = MIN (device_param->device_available_mem, (device_param->device_maxmem_alloc * 4)) - (fixed_mem + spill_mem);
 
   tmto = 0;
 
@@ -110,7 +128,7 @@ const char *scrypt_module_extra_tuningdb_block (MAYBE_UNUSED const hashconfig_t 
       // This is the typical case and the main challenge: choosing the right TMTO value.
       // Finding a consistently good algorithm is nearly impossible due to the many factors
       // that influence performance. There is no clear rule of thumb.
-      // 
+      //
       // For example, consider the default scrypt configuration with N=16k and r=8.
       //
       // In one test with an NVIDIA mobile GPU with 16 GiB of memory (minus X), the device could
@@ -136,12 +154,13 @@ const char *scrypt_module_extra_tuningdb_block (MAYBE_UNUSED const hashconfig_t 
       {
         for (tmto = 0; tmto < 2; tmto++) // results in tmto = 2
         {
-          if (device_param->device_host_unified_memory == 1) break; // do not touch
-
           if ((device_param->opencl_device_vendor_id == VENDOR_ID_AMD)
            || (device_param->opencl_device_vendor_id == VENDOR_ID_AMD_USE_HIP))
           {
-            if (tmto == 0) continue; // at least 1
+            if (device_param->device_host_unified_memory == 0) // This special rule only affects dGPUs not iGPU
+            {
+              if (tmto == 0) continue; // at least 1
+            }
           }
 
           const u64 size_per_accel_tmto = size_per_accel >> tmto;
@@ -153,24 +172,12 @@ const char *scrypt_module_extra_tuningdb_block (MAYBE_UNUSED const hashconfig_t 
           if (blocks_perc > 1.16) continue;
 
           // probably very low scrypt configuration = register pressure becomes a bottleneck
-          if ((blocks_perc * (1 << tmto)) < 0.4) continue;
+          if ((blocks_perc * (1 << tmto)) < 0.4)
+          {
+            if (scrypt_r == 1) continue;
+          }
 
           break;
-        }
-
-        if (device_param->is_hip == true)
-        {
-          // we use some local memory to speed up things, so 
-          // we need to make sure there's enough local memory available
-
-          u64 state_per_accel_tmto = state_per_accel >> tmto;
-
-          while (state_per_accel_tmto > device_local_mem_size)
-          {
-            tmto++;
-
-            state_per_accel_tmto = state_per_accel >> tmto;
-          }
         }
       }
     }
@@ -268,7 +275,7 @@ u64 scrypt_module_extra_tmp_size (MAYBE_UNUSED const hashconfig_t *hashconfig, M
 
   // now that we know they all have the same settings, we also need to check the self-test hash is different to what the user hash is using
 
-  if (user_options->self_test == true)
+  if ((hashconfig->opts_type & OPTS_TYPE_SELF_TEST_DISABLE) == 0)
   {
     if ((scrypt_N != hashes->st_salts_buf[0].scrypt_N)
      || (scrypt_r != hashes->st_salts_buf[0].scrypt_r)
@@ -278,7 +285,15 @@ u64 scrypt_module_extra_tmp_size (MAYBE_UNUSED const hashconfig_t *hashconfig, M
     }
   }
 
-  const u64 tmp_size = 128ULL * scrypt_r * scrypt_p;
+  // this is what we call SCRYPT_SZ in kernel
+
+  u64 tmp_size = 128ULL * scrypt_r * scrypt_p;
+
+  // we need twice the size of SCRYPT_SZ so we can have two elements of that size.
+  // we can safely process blockmix on the second element without modifying the first element.
+  // this can be useful when using hooks in combination with P > 1
+
+  tmp_size *= 2;
 
   return tmp_size;
 }
@@ -289,16 +304,21 @@ char *scrypt_module_jit_build_options (MAYBE_UNUSED const hashconfig_t *hashconf
   const u32 scrypt_r = (hashes->salts_buf[0].scrypt_r == 0) ? hashes->st_salts_buf[0].scrypt_r : hashes->salts_buf[0].scrypt_r;
   const u32 scrypt_p = (hashes->salts_buf[0].scrypt_p == 0) ? hashes->st_salts_buf[0].scrypt_p : hashes->salts_buf[0].scrypt_p;
 
-  const u64 tmp_size = 128ULL * scrypt_r * scrypt_p;
+  u64 tmp_size = 128ULL * scrypt_r * scrypt_p;
+
+  tmp_size *= 2; // see scrypt_module_extra_tmp_size for details
 
   char *jit_build_options = NULL;
 
-  hc_asprintf (&jit_build_options, "-D SCRYPT_N=%u -D SCRYPT_R=%u -D SCRYPT_P=%u -D SCRYPT_TMTO=%u -D SCRYPT_TMP_ELEM=%" PRIu64,
+  const u32 expected_threads = scrypt_exptected_threads (hashconfig, user_options, user_options_extra, device_param);
+
+  hc_asprintf (&jit_build_options, "-D FIXED_LOCAL_SIZE=%u -D SCRYPT_N=%u -D SCRYPT_R=%u -D SCRYPT_P=%u -D SCRYPT_TMTO=%u -D SCRYPT_TMP_ELEM=%" PRIu64,
+    expected_threads,
     scrypt_N,
     scrypt_r,
     scrypt_p,
     tmto,
-    tmp_size / 16);
+    tmp_size / 4);
 
   return jit_build_options;
 }

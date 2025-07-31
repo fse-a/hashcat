@@ -17,16 +17,6 @@
 #define COMPARE_S M2S(INCLUDE_PATH/inc_comp_single.cl)
 #define COMPARE_M M2S(INCLUDE_PATH/inc_comp_multi.cl)
 
-typedef struct exodus_tmp
-{
-  #ifndef SCRYPT_TMP_ELEM
-  #define SCRYPT_TMP_ELEM 1
-  #endif
-
-  uint4 P[SCRYPT_TMP_ELEM];
-
-} exodus_tmp_t;
-
 typedef struct exodus
 {
   u32 iv[4];
@@ -35,80 +25,51 @@ typedef struct exodus
 
 } exodus_t;
 
-KERNEL_FQ void HC_ATTR_SEQ m28200_init (KERN_ATTR_TMPS_ESALT (exodus_tmp_t, exodus_t))
+KERNEL_FQ KERNEL_FA void m28200_init (KERN_ATTR_TMPS_ESALT (scrypt_tmp_t, exodus_t))
 {
   const u64 gid = get_global_id (0);
 
   if (gid >= GID_CNT) return;
 
-  scrypt_pbkdf2 (pws[gid].i, pws[gid].pw_len, salt_bufs[SALT_POS_HOST].salt_buf, salt_bufs[SALT_POS_HOST].salt_len, tmps[gid].P, SCRYPT_CNT * 4);
+  scrypt_pbkdf2_ggg (pws[gid].i, pws[gid].pw_len, salt_bufs[SALT_POS_HOST].salt_buf, salt_bufs[SALT_POS_HOST].salt_len, tmps[gid].in, SCRYPT_SZ);
 
-  scrypt_blockmix_in (tmps[gid].P, SCRYPT_CNT * 4);
+  scrypt_blockmix_in (tmps[gid].in, tmps[gid].out, SCRYPT_SZ);
 }
 
-KERNEL_FQ void HC_ATTR_SEQ m28200_loop_prepare (KERN_ATTR_TMPS_ESALT (exodus_tmp_t, exodus_t))
-{
-  const u64 gid = get_global_id (0);
-  const u64 lid = get_local_id (0);
-
-  if (gid >= GID_CNT) return;
-
-  GLOBAL_AS uint4 *d_scrypt0_buf = (GLOBAL_AS uint4 *) d_extra0_buf;
-  GLOBAL_AS uint4 *d_scrypt1_buf = (GLOBAL_AS uint4 *) d_extra1_buf;
-  GLOBAL_AS uint4 *d_scrypt2_buf = (GLOBAL_AS uint4 *) d_extra2_buf;
-  GLOBAL_AS uint4 *d_scrypt3_buf = (GLOBAL_AS uint4 *) d_extra3_buf;
-
-  #ifdef IS_HIP
-  LOCAL_VK uint4 X_s[MAX_THREADS_PER_BLOCK][STATE_CNT4];
-  LOCAL_AS uint4 *X = X_s[lid];
-  #else
-  uint4 X[STATE_CNT4];
-  #endif
-
-  const u32 P_offset = SALT_REPEAT * STATE_CNT4;
-
-  GLOBAL_AS uint4 *P = tmps[gid].P + P_offset;
-
-  for (int z = 0; z < STATE_CNT4; z++) X[z] = P[z];
-
-  scrypt_smix_init (X, d_scrypt0_buf, d_scrypt1_buf, d_scrypt2_buf, d_scrypt3_buf, gid);
-
-  for (int z = 0; z < STATE_CNT4; z++) P[z] = X[z];
-}
-
-KERNEL_FQ void HC_ATTR_SEQ m28200_loop (KERN_ATTR_TMPS_ESALT (exodus_tmp_t, exodus_t))
+KERNEL_FQ KERNEL_FA void m28200_loop_prepare (KERN_ATTR_TMPS_ESALT (scrypt_tmp_t, exodus_t))
 {
   const u64 gid = get_global_id (0);
   const u64 lid = get_local_id (0);
+  const u64 lsz = get_local_size (0);
+  const u64 bid = get_group_id (0);
 
   if (gid >= GID_CNT) return;
 
-  GLOBAL_AS uint4 *d_scrypt0_buf = (GLOBAL_AS uint4 *) d_extra0_buf;
-  GLOBAL_AS uint4 *d_scrypt1_buf = (GLOBAL_AS uint4 *) d_extra1_buf;
-  GLOBAL_AS uint4 *d_scrypt2_buf = (GLOBAL_AS uint4 *) d_extra2_buf;
-  GLOBAL_AS uint4 *d_scrypt3_buf = (GLOBAL_AS uint4 *) d_extra3_buf;
+  u32 X[STATE_CNT4];
 
-  uint4 X[STATE_CNT4];
+  GLOBAL_AS u32 *P = tmps[gid].out + (SALT_REPEAT * STATE_CNT4);
 
-  #ifdef IS_HIP
-  LOCAL_VK uint4 T_s[MAX_THREADS_PER_BLOCK][STATE_CNT4];
-  LOCAL_AS uint4 *T = T_s[lid];
-  #else
-  uint4 T[STATE_CNT4];
-  #endif
-
-  const u32 P_offset = SALT_REPEAT * STATE_CNT4;
-
-  GLOBAL_AS uint4 *P = tmps[gid].P + P_offset;
-
-  for (int z = 0; z < STATE_CNT4; z++) X[z] = P[z];
-
-  scrypt_smix_loop (X, T, d_scrypt0_buf, d_scrypt1_buf, d_scrypt2_buf, d_scrypt3_buf, gid);
-
-  for (int z = 0; z < STATE_CNT4; z++) P[z] = X[z];
+  scrypt_smix_init (P, X, d_extra0_buf, d_extra1_buf, d_extra2_buf, d_extra3_buf, gid, lid, lsz, bid);
 }
 
-KERNEL_FQ void HC_ATTR_SEQ m28200_comp (KERN_ATTR_TMPS_ESALT (exodus_tmp_t, exodus_t))
+KERNEL_FQ KERNEL_FA void m28200_loop (KERN_ATTR_TMPS_ESALT (scrypt_tmp_t, exodus_t))
+{
+  const u64 gid = get_global_id (0);
+  const u64 lid = get_local_id (0);
+  const u64 lsz = get_local_size (0);
+  const u64 bid = get_group_id (0);
+
+  if (gid >= GID_CNT) return;
+
+  u32 X[STATE_CNT4];
+  u32 T[STATE_CNT4];
+
+  GLOBAL_AS u32 *P = tmps[gid].out + (SALT_REPEAT * STATE_CNT4);
+
+  scrypt_smix_loop (P, X, T, d_extra0_buf, d_extra1_buf, d_extra2_buf, d_extra3_buf, gid, lid, lsz, bid);
+}
+
+KERNEL_FQ KERNEL_FA void m28200_comp (KERN_ATTR_TMPS_ESALT (scrypt_tmp_t, exodus_t))
 {
   const u64 gid = get_global_id (0);
   const u64 lid = get_local_id (0);
@@ -167,22 +128,24 @@ KERNEL_FQ void HC_ATTR_SEQ m28200_comp (KERN_ATTR_TMPS_ESALT (exodus_tmp_t, exod
 
   if (gid >= GID_CNT) return;
 
-  scrypt_blockmix_out (tmps[gid].P, SCRYPT_CNT * 4);
+  scrypt_blockmix_out (tmps[gid].out, tmps[gid].in, SCRYPT_SZ);
 
-  scrypt_pbkdf2 (pws[gid].i, pws[gid].pw_len, (GLOBAL_AS const u32 *) tmps[gid].P, SCRYPT_CNT * 4, tmps[gid].P, 32);
+  u32 out[8];
+
+  scrypt_pbkdf2_ggp (pws[gid].i, pws[gid].pw_len, tmps[gid].in, SCRYPT_SZ, out, 32);
 
   // GCM stuff
 
   u32 ukey[8];
 
-  ukey[0] = hc_swap32_S (tmps[gid].P[0].x);
-  ukey[1] = hc_swap32_S (tmps[gid].P[0].y);
-  ukey[2] = hc_swap32_S (tmps[gid].P[0].z);
-  ukey[3] = hc_swap32_S (tmps[gid].P[0].w);
-  ukey[4] = hc_swap32_S (tmps[gid].P[1].x);
-  ukey[5] = hc_swap32_S (tmps[gid].P[1].y);
-  ukey[6] = hc_swap32_S (tmps[gid].P[1].z);
-  ukey[7] = hc_swap32_S (tmps[gid].P[1].w);
+  ukey[0] = hc_swap32_S (out[0]);
+  ukey[1] = hc_swap32_S (out[1]);
+  ukey[2] = hc_swap32_S (out[2]);
+  ukey[3] = hc_swap32_S (out[3]);
+  ukey[4] = hc_swap32_S (out[4]);
+  ukey[5] = hc_swap32_S (out[5]);
+  ukey[6] = hc_swap32_S (out[6]);
+  ukey[7] = hc_swap32_S (out[7]);
 
   u32 key[60] = { 0 };
   u32 subKey[4] = { 0 };

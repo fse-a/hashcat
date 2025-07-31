@@ -25,7 +25,7 @@
 // and therefore it's easier for hashcat to parallelize if this multiplier is low.
 // in the end, it's a trade-off.
 
-#define N_ACCEL 8
+#define N_ACCEL 32
 
 typedef struct
 {
@@ -215,7 +215,7 @@ bool salt_prepare (void *platform_context, MAYBE_UNUSED hashconfig_t *hashconfig
   {
     unit_t *unit_buf = &bridge_argon2id->units_buf[unit_idx];
 
-    unit_buf->memory = hcmalloc_aligned ((largest_m * 1024), 32); // because AVX2
+    unit_buf->memory = hcmalloc_bridge_aligned ((largest_m * 1024), 32); // because AVX2
   }
 
   return true;
@@ -229,7 +229,7 @@ void salt_destroy (void *platform_context, MAYBE_UNUSED hashconfig_t *hashconfig
   {
     unit_t *unit_buf = &bridge_argon2id->units_buf[unit_idx];
 
-    hcfree_aligned (unit_buf->memory);
+    hcfree_bridge_aligned (unit_buf->memory);
   }
 }
 

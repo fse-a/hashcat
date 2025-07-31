@@ -56,7 +56,7 @@ int gidd_to_pw_t                            (hashcat_ctx_t *hashcat_ctx, hc_devi
 int copy_pws_idx                            (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, u64 gidd, const u64 cnt, pw_idx_t *dest);
 int copy_pws_comp                           (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, u32 off, u32 cnt, u32 *dest);
 
-int choose_kernel                           (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 highest_pw_len, const u64 pws_pos, const u64 pws_cnt, const u32 fast_iteration, const u32 salt_pos);
+int choose_kernel                           (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 highest_pw_len, const u64 pws_pos, const u64 pws_cnt, const u32 fast_iteration, const u32 salt_pos, const bool is_autotune);
 
 int run_cuda_kernel_atinit                  (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, CUdeviceptr buf, const u64 num);
 int run_cuda_kernel_utf8toutf16le           (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, CUdeviceptr buf, const u64 num);
@@ -71,11 +71,11 @@ int run_hip_kernel_memset32                 (hashcat_ctx_t *hashcat_ctx, hc_devi
 int run_hip_kernel_bzero                    (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, hipDeviceptr_t buf, const u64 size);
 
 #if defined (__APPLE__)
-int run_metal_kernel_atinit                 (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, mtl_mem buf, const u64 num);
-int run_metal_kernel_utf8toutf16le          (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, mtl_mem buf, const u64 num);
-int run_metal_kernel_memset                 (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, mtl_mem buf, const u64 offset, const u8  value, const u64 size);
-int run_metal_kernel_memset32               (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, mtl_mem buf, const u64 offset, const u32 value, const u64 size);
-int run_metal_kernel_bzero                  (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, mtl_mem buf, const u64 size);
+int run_metal_kernel_atinit                 (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, mtl_mem_t buf, const u64 num);
+int run_metal_kernel_utf8toutf16le          (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, mtl_mem_t buf, const u64 num);
+int run_metal_kernel_memset                 (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, mtl_mem_t buf, const u64 offset, const u8  value, const u64 size);
+int run_metal_kernel_memset32               (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, mtl_mem_t buf, const u64 offset, const u32 value, const u64 size);
+int run_metal_kernel_bzero                  (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, mtl_mem_t buf, const u64 size);
 #endif
 
 int run_opencl_kernel_atinit                (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, cl_mem buf, const u64 num);
@@ -84,7 +84,7 @@ int run_opencl_kernel_memset                (hashcat_ctx_t *hashcat_ctx, hc_devi
 int run_opencl_kernel_memset32              (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, cl_mem buf, const u64 offset, const u32 value, const u64 size);
 int run_opencl_kernel_bzero                 (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, cl_mem buf, const u64 size);
 
-int run_kernel                              (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 kern_run, const u64 pws_pos, const u64 num, const u32 event_update, const u32 iteration);
+int run_kernel                              (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 kern_run, const u64 pws_pos, const u64 num, const u32 event_update, const u32 iteration, const bool is_autotune);
 int run_kernel_mp                           (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 kern_run, const u64 num);
 int run_kernel_tm                           (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param);
 int run_kernel_amp                          (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u64 num);
