@@ -30,7 +30,7 @@ typedef struct workshop_temp
 } workshop_temp_t;
 
 
-KERNEL_FQ void m12345_init (KERN_ATTR_TMPS_ESALT (workshop_temp_t, workshop_t))
+KERNEL_FQ KERNEL_FA void m12345_init (KERN_ATTR_TMPS_ESALT (workshop_temp_t, workshop_t))
 {
   const u64 gid = get_global_id (0);
 
@@ -58,7 +58,7 @@ KERNEL_FQ void m12345_init (KERN_ATTR_TMPS_ESALT (workshop_temp_t, workshop_t))
   tmps[gid].digest_buf[3] = ctx.h[3];
 }
 
-KERNEL_FQ void m12345_loop (KERN_ATTR_TMPS_ESALT (workshop_temp_t, workshop_t))
+KERNEL_FQ KERNEL_FA void m12345_loop (KERN_ATTR_TMPS_ESALT (workshop_temp_t, workshop_t))
 {
   const u64 gid = get_global_id (0);
 
@@ -93,7 +93,7 @@ KERNEL_FQ void m12345_loop (KERN_ATTR_TMPS_ESALT (workshop_temp_t, workshop_t))
   tmps[gid].digest_buf[3] = digest[3];
 }
 
-KERNEL_FQ void m12345_comp (KERN_ATTR_TMPS_ESALT (workshop_temp_t, workshop_t))
+KERNEL_FQ KERNEL_FA void m12345_comp (KERN_ATTR_TMPS_ESALT (workshop_temp_t, workshop_t))
 {
   const u64 lid = get_local_id (0);
   const u64 gid = get_global_id (0);
